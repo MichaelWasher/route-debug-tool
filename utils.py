@@ -7,6 +7,10 @@ import time
 from kubernetes.stream import stream
 from kubernetes.client.rest import ApiException
 import requests
+import json
+import pdb
+from collections import defaultdict
+
 
 config.load_kube_config()
 v1 = client.CoreV1Api()
@@ -206,3 +210,70 @@ def get_router_pods():
     #      --selector=ingresscontroller.operator.openshift.io/deployment-ingresscontroller=${router_name}
 
     # From there we can get perform RSH and assume that Curl and Python are present
+
+
+def get_apiserver_serveraddress(api_client):
+    """
+
+    Parameters
+    ----------
+    api_client
+
+    Returns
+    -------
+
+    """
+    resp, status_code, headers = api_client.call_api('/api', 'GET', auth_settings=['BearerToken'], response_type='json',
+                                                     _preload_content=False)
+    api_resp = json.loads(resp.data.decode('utf-8'))
+    api_ip_addresses = [address_tuple["serverAddress"] for address_tuple in api_resp["serverAddressByClientCIDRs"]]
+    return api_ip_addresses
+
+# get apiservers
+def get_apiservers_ips():
+    """
+
+    Returns
+    -------
+
+    """
+    # kgp -n openshift-kube-apiserver -l app=openshift-kube-apiserver
+    ns = "openshift-kube-apiserver"
+    label_selector = "app=openshift-kube-apiserver"
+
+    pod_list = v1.list_namespaced_pod(namespace=ns, label_selector=label_selector)
+
+    pod_ips = [pod.status.pod_ip for pod in pod_list.items]
+    return pod_ips
+
+def check_apiserver_loadbalancer(api_client, retries = 30):
+    """
+
+    Parameters
+    ----------
+    api_client
+
+    Returns
+    -------
+
+    """
+    apiserver_ips = defaultdict(lambda: 0)
+
+    expected_ips = get_apiservers_ips()
+    num_of_apiservers = len(expected_ips)
+
+    for i in range(retries):
+        for ip in get_apiserver_serveraddress(api_client):
+            apiserver_ips[ip] += 1
+
+    if len(apiserver_ips.keys()) < num_of_apiservers:
+        raise Exception("Not all expected APIServers were seen in the collections. This may indicate sticky sessions")
+
+    ## If half of the expected requests didn't make it to the
+    ## Assume there are sticky sessions.
+    for k, v in num_of_apiservers:
+        if v < ((retries / num_of_apiservers) * 0.5):
+            raise Exception(
+                f"APIServers is heavily uneven. Expected {retries / num_of_apiservers} , got {v}")
+
+    return
