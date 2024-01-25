@@ -1,4 +1,7 @@
-kubernetes
+kubernetes~=29.0.0
 graphlib
 networkx
 matplotlib
+
+urllib3~=2.1.0
+requests~=2.31.0

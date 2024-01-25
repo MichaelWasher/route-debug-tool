@@ -1,22 +1,19 @@
 """ This module is a general purpose place for reusable functions to perform tests in the Kuberenetes environment"""
-import pdb
 
-from kubernetes import client, config
-from kubernetes.client import *
-import time
-from kubernetes.stream import stream
-from kubernetes.client.rest import ApiException
-import requests
 import json
-import pdb
+import logging
+import time
 from collections import defaultdict
 
+import requests
+from kubernetes import client, config
+from kubernetes.client import *
 
 config.load_kube_config()
 v1 = client.CoreV1Api()
 
 
-# TODO: Add additional logging and fix logging to use a log library
+DEBUG_POD = None
 
 
 def create_debug_pod(name="debug-pod", namespace="openshift-console", image="quay.io/mwasher/fedora", node_name=None):
@@ -33,7 +30,11 @@ def create_debug_pod(name="debug-pod", namespace="openshift-console", image="qua
     -------
     V1Pod created
     """
+    global DEBUG_POD
+    if DEBUG_POD != None:
+        return DEBUG_POD
 
+    # TODO: Perform as a signleton
     metadata = V1ObjectMeta(
         generate_name=f"{name}-",
         namespace=namespace
@@ -59,7 +60,11 @@ def create_debug_pod(name="debug-pod", namespace="openshift-console", image="qua
         spec=pod_spec
     )
     created_pod = client.CoreV1Api().create_namespaced_pod(namespace, body=pod)
-    print(f"Created Pod: {created_pod.metadata.name}")
+    logging.info(f"Created Pod: {created_pod.metadata.name}")
+
+    # Store Singleton
+    DEBUG_POD = created_pod
+
     return created_pod
 
 
@@ -86,57 +91,7 @@ def wait_for_ready(pod):
         time.sleep(1)
 
 
-def get_listening_ports(target_pod):
-    """
-
-    Parameters
-    ----------
-    target_pod PodV1
-
-    Returns
-    -------
-    List of Port numbers that are actively listening. If there is an issue, None is returned
-    """
-    sniffer_pod = create_debug_pod(node_name=target_pod.spec.node_name)
-    # Wait for Pod to be running
-    wait_for_ready(sniffer_pod)
-
-    # Run the script to output the listening ports (one per line)
-    script = f"""
-        function get_listening_ports () {{
-            NS=$1
-            POD=$2
-        
-            POD_ID=$( crictl pods --namespace=$NS --name=$POD -o json |  jq -r '.items[].id' )
-            NS_PATH=$( crictl inspectp $POD_ID | jq -r '.info.runtimeSpec.linux.namespaces[] | select( .type=="network" ) | .path' )
-            nsenter --net=$NS_PATH ss -H -lptn
-        }}
-        get_listening_ports_str=$(declare -f get_listening_ports)
-        func_output=$(chroot /host /bin/sh -c "${{get_listening_ports_str}} ; get_listening_ports {target_pod.metadata.namespace} {target_pod.metadata.name}")
-        # Filter output
-        echo $func_output | cut -d ":" -f 2 | cut -d " " -f 1 | sort -u
-    """
-
-    # Calling exec and waiting for response
-    exec_command = [
-        '/bin/sh',
-        '-c', f"{script}"
-    ]
-    try:
-        resp = stream(client.api.CoreV1Api().connect_get_namespaced_pod_exec,
-                      sniffer_pod.metadata.name,
-                      sniffer_pod.metadata.namespace,
-                      command=exec_command,
-                      stderr=True, stdin=False,
-                      stdout=True, tty=False)
-        print("Response: " + resp)
-        return resp.splitlines(keepends=False)
-    except client.exceptions.ApiException as e:
-        print(e)
-        return None
-
-
-def check_route(route):
+def http_check_route(route):
     '''
 
     Parameters
@@ -149,53 +104,21 @@ def check_route(route):
     '''
     # Check the Route with response code checks
     route_domain = route["spec"]["host"]
-    print(f"Performing check on {route_domain}")
+    logging.info(f"Performing check on {route_domain}")
     r = requests.get(url="https://" + route["spec"]["host"], verify=False)
     if 300 > r.status_code >= 200:
-        print(f"Route request succeeded with status code: {r.status_code}")
+        logging.info(f"Route request succeeded with status code: {r.status_code}")
     else:
-        print(f"The Route request failed with status_code: {r.status_code}")
+        logging.info(f"The Route request failed with status_code: {r.status_code}")
 
 
-def check_service(service):
-    """
-
-    Parameters
-    ----------
-    service
-
-    Returns
-    -------
-
-    """
-    # Check the Service from inside the cluster:
-    # TODO: Confirm the port is the same as the route destination
-    service_ip = service.spec.cluster_ip
-    # TODO: Check these ports against the Route ports defined
-    for port in service.spec.ports:
-        port_number = port.port
-        pdb.set_trace()
-        # TODO check this against HTTPS ports
-        r = requests.get(url=f"https://{service_ip}:{port_number}", verify=False)
-        if 300 > r.status_code >= 200:
-            print(f"Service {service.metadata.name} request succeeded with status code: {r.status_code}")
-        else:
-            print(f"Service {service.metadata.name} request failed with status_code: {r.status_code}")
-
-
-def check_pods(pod_list):
-    """
-
-    Parameters
-    ----------
-    pod_list
-
-    Returns
-    -------
-
-    """
-    # TOOD: Should really take in a pod_name as the gatherer pod
+def remote_request_get(gatherer_pod, url, params=None, **kwargs):
+    # RSH INTO THE POD
+    # perform curl
+    # Serialise the response and return
+    #
     pass
+
 
 def get_router_pods():
     """
@@ -210,6 +133,7 @@ def get_router_pods():
     #      --selector=ingresscontroller.operator.openshift.io/deployment-ingresscontroller=${router_name}
 
     # From there we can get perform RSH and assume that Curl and Python are present
+    pass
 
 
 def get_apiserver_serveraddress(api_client):
@@ -229,9 +153,10 @@ def get_apiserver_serveraddress(api_client):
     api_ip_addresses = [address_tuple["serverAddress"] for address_tuple in api_resp["serverAddressByClientCIDRs"]]
     return api_ip_addresses
 
+
 # get apiservers
 def get_apiservers_ips():
-    """
+    """‰
 
     Returns
     -------
@@ -246,7 +171,8 @@ def get_apiservers_ips():
     pod_ips = [pod.status.pod_ip for pod in pod_list.items]
     return pod_ips
 
-def check_apiserver_loadbalancer(api_client, retries = 30):
+
+def s(api_client, retries=30):
     """
 
     Parameters
