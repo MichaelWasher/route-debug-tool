@@ -1,5 +1,7 @@
 from collections import namedtuple
 
+from kubernetes.stream import stream
+
 from utils import *
 
 PortMapping = namedtuple('PortMapping', ['service_port', 'target_port'])
@@ -37,8 +39,6 @@ def curl_inside_cluster(debug_pod, service_ip, service_port):
     -------
     List of Port numbers that are actively listening. If there is an issue, None is returned
     """
-    pdb.set_trace() \
- \
     # Run the script to output the listening ports (one per line)
     script = 'curl -s -o /dev/null -w "%{http_code}" ' + service_ip + ":" + service_port
 
@@ -47,7 +47,7 @@ def curl_inside_cluster(debug_pod, service_ip, service_port):
         '/bin/sh',
         '-c', f"{script}"
     ]
-    pdb.set_trace()
+
     try:
         resp = stream(client.api.CoreV1Api().connect_get_namespaced_pod_exec,
                       debug_pod.metadata.name,
@@ -77,6 +77,9 @@ def check_service(service, pod_ports):
     -------
 
     """
+    # Find all Pods and check the Pods
+
+
     # Find the complement of service ports and the expected container ports
     port_mapping_list = get_service_port_mapping(service)
     target_ports = [pm.target_port for pm in port_mapping_list]

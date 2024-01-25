@@ -1,26 +1,9 @@
 """ This module provides helper functions related specifically to the networking of Kubernetes Pods """
-
-from http.client import HTTPConnection
-
-from kubernetes.stream import portforward
-from kubernetes.stream.ws_client import PortForward
+from kubernetes.stream import stream, portforward
 
 from utils import *
 
 CHECK_STATUS_CODES = False
-
-
-class ForwardedKubernetesHTTPConnection(HTTPConnection):
-
-    def __init__(self, forwarding: PortForward, port: int):
-        super().__init__("127.0.0.1", port)
-        self.sock = forwarding.socket(port)
-
-    def connect(self) -> None:
-        pass
-
-    def close(self) -> None:
-        pass
 
 
 def get_listening_ports(target_pod):
@@ -154,7 +137,8 @@ def check_pod(pod):
 
     complement_ports = check_container_ports_with_listening(container_ports, listening_ports)
     if len(complement_ports) > 0:
-        logging.info(f"The following ports are defined but there is not application listening: {', '.join(complement_ports)}")
+        logging.info(
+            f"The following ports are defined but there is not application listening: {', '.join(complement_ports)}")
 
     # Check the ports (assuming TCP) are responding to HTTP responses. Ignoring UDP and HTTPS (TODO filter)
     for remote_port in container_ports:

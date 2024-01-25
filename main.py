@@ -53,12 +53,15 @@ def parse_args():
     if not args.namespace:
         args.namespace = "default"
 
+    if not args.log_level:
+        args.log_level = "info"
+
     return args
 
 
 def configure_logging(log_level):
     logging.basicConfig()
-    log_level = log_level.toLower()
+    log_level = log_level.lower()
 
     match log_level:
         case "debug":
@@ -173,7 +176,7 @@ def perform_check_service(name: str, namespace: str) -> None:
 def __main__():
     # Parse args
     args = parse_args()
-    configure_logging()
+    configure_logging(args.log_level)
 
     # Deal with Version and help
     if args.version:

@@ -4,16 +4,30 @@ import json
 import logging
 import time
 from collections import defaultdict
+from http.client import HTTPConnection
 
 import requests
 from kubernetes import client, config
 from kubernetes.client import *
+from kubernetes.stream.ws_client import PortForward
 
 config.load_kube_config()
 v1 = client.CoreV1Api()
 
-
 DEBUG_POD = None
+
+
+class ForwardedKubernetesHTTPConnection(HTTPConnection):
+
+    def __init__(self, forwarding: PortForward, port: int):
+        super().__init__("127.0.0.1", port)
+        self.sock = forwarding.socket(port)
+
+    def connect(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
 
 
 def create_debug_pod(name="debug-pod", namespace="openshift-console", image="quay.io/mwasher/fedora", node_name=None):
@@ -34,7 +48,6 @@ def create_debug_pod(name="debug-pod", namespace="openshift-console", image="qua
     if DEBUG_POD != None:
         return DEBUG_POD
 
-    # TODO: Perform as a signleton
     metadata = V1ObjectMeta(
         generate_name=f"{name}-",
         namespace=namespace
