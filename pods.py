@@ -49,10 +49,10 @@ def get_listening_ports(target_pod):
                       command=exec_command,
                       stderr=True, stdin=False,
                       stdout=True, tty=False)
-        logging.info("Response: " + resp)
+        logging.debug("Response: " + resp)
         return resp.splitlines(keepends=False)
     except client.exceptions.ApiException as e:
-        logging.info(e)
+        logging.debug(e)
         return None
 
 
@@ -127,24 +127,33 @@ def check_pod(pod):
     -------
 
     """
+    logging.info(f"Performing checks for Pod {pod.metadata.name}")
     # Check the Ports are defined and listened
     container_ports = get_container_ports(pod)
     pod_name = pod.metadata.name
-    logging.info(f"Pod '{pod_name}' is configured with ports: {', '.join(container_ports)}")
+    logging.debug(f"Pod '{pod_name}' is configured with ports: {', '.join(container_ports)}")
 
     listening_ports = get_listening_ports(pod)
-    logging.info(f"Pod '{pod_name}' is listening to ports: {', '.join(listening_ports)}")
+    logging.debug(f"Pod '{pod_name}' is listening to ports: {', '.join(listening_ports)}")
 
     complement_ports = check_container_ports_with_listening(container_ports, listening_ports)
     if len(complement_ports) > 0:
-        logging.info(
+        logging.debug(
             f"The following ports are defined but there is not application listening: {', '.join(complement_ports)}")
+
+    logging.info("Check all containerPorts are listening in Pod: ✅")
 
     # Check the ports (assuming TCP) are responding to HTTP responses. Ignoring UDP and HTTPS (TODO filter)
     for remote_port in container_ports:
         resp = port_forward_check(pod, remote_port)
-        if CHECK_STATUS_CODES and (resp.status < 200 or resp.status > 300):
-            logging.info(
-                f"Error with port {remote_port} for pod {pod.metadata.name}. Expected 2XX status code but received {str(resp.status)}")
+        if CHECK_STATUS_CODES:
+            if resp.status < 200 or resp.status > 300:
+                logging.debug(
+                    f"Error with port {remote_port} for pod {pod.metadata.name}. Expected 2XX status code but received {str(resp.status)}")
+                logging.info("Check containerPorts respond with HTTP status 2XX: ❌")
+            else:
+                logging.info("Check containerPorts respond with HTTP status 2XX: ✅")
 
-    return
+    logging.info("Check all containerPorts respond to HTTP GET requests: ✅")
+
+    return container_ports

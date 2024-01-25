@@ -55,14 +55,14 @@ def curl_inside_cluster(debug_pod, service_ip, service_port):
                       command=exec_command,
                       stderr=True, stdin=False,
                       stdout=True, tty=False)
-        logging.info("Response: " + resp)
+        logging.debug("Response: " + resp)
         # Check if the `curl` request failed to get a layer7 response
         if resp == "000":
             return None
         else:
             return resp
     except client.exceptions.ApiException as e:
-        logging.info(e)
+        logging.debug(e)
         return None
 
 
@@ -77,8 +77,6 @@ def check_service(service, pod_ports):
     -------
 
     """
-    # Find all Pods and check the Pods
-
 
     # Find the complement of service ports and the expected container ports
     port_mapping_list = get_service_port_mapping(service)
@@ -86,7 +84,7 @@ def check_service(service, pod_ports):
     complement_ports = list(set(target_ports) - set(pod_ports))
 
     if len(complement_ports) > 0:
-        logging.info(f"The following ports are defined in the Service but no Pod is listening: {', '.join(complement_ports)}")
+        logging.debug(f"The following ports are defined in the Service but no Pod is listening: {', '.join(complement_ports)}")
 
     # Check the Service from inside the cluster:
     service_ip = service.spec.cluster_ip
@@ -100,10 +98,10 @@ def check_service(service, pod_ports):
         status_code = curl_inside_cluster(debug_pod, service_ip, service_port)
 
         if status_code is None:
-            logging.info(f"Failed to check Service {service_name} on {service_ip}:{service_port}")
+            logging.debug(f"Failed to check Service {service_name} on {service_ip}:{service_port}")
 
         if CHECK_STATUS_CODE:
             if 300 > status_code >= 200:
-                logging.info(f"Service {service.metadata.name} request succeeded with status code: {status_code}")
+                logging.debug(f"Service {service.metadata.name} request succeeded with status code: {status_code}")
             else:
-                logging.info(f"Service {service.metadata.name} request failed with status_code: {status_code}")
+                logging.debug(f"Service {service.metadata.name} request failed with status_code: {status_code}")
